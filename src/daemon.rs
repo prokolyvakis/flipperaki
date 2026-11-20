@@ -389,8 +389,14 @@ impl Daemon {
                         self.reply_waiter(grant.client, response);
                     }
                     Err(denial) => {
-                        self.control = Control::None;
                         self.reply_waiter(pending.client, Err(Failure::Denied(denial)));
+                        if denial == broker::Denial::DeniedByOperator {
+                            self.control = Control::None;
+                        } else {
+                            // A mismatched or late decision: clear the prompt on Buddy
+                            // too, so no stale request stays on screen.
+                            self.cancel_pending().await;
+                        }
                     }
                 }
             }
@@ -869,21 +875,24 @@ impl Daemon {
 
 /// Validates a `flipper_open` argument: an exact installed FAP path.
 fn app_target(app: &str) -> Result<AppTarget, Failure> {
-    let valid = app.starts_with(APPS_ROOT)
-        && app.ends_with(".fap")
+    let invalid = || Failure::Invalid("app must be an id returned by flipper_apps".into());
+    // Exactly /ext/apps/<category>/<name>.fap — the same shape Buddy accepts.
+    let rest = app
+        .strip_prefix(APPS_ROOT)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .ok_or_else(invalid)?;
+    let (category, file) = rest.split_once('/').ok_or_else(invalid)?;
+    let stem = file.strip_suffix(".fap").ok_or_else(invalid)?;
+    let valid = !category.is_empty()
+        && !category.starts_with('.')
+        && !stem.is_empty()
+        && !file.contains('/')
         && !app.contains("..")
         && app.len() <= crate::buddy::APP_PATH_MAX_CHARS
         && app.chars().all(|c| c.is_ascii_graphic() || c == ' ');
     if !valid {
-        return Err(Failure::Invalid(
-            "app must be an id returned by flipper_apps".into(),
-        ));
+        return Err(invalid());
     }
-    let stem = app
-        .rsplit('/')
-        .next()
-        .unwrap_or(app)
-        .trim_end_matches(".fap");
     let label: String = stem.chars().take(crate::buddy::LABEL_MAX_CHARS).collect();
     if label.len() < stem.len() {
         // The approval prompt must show the real name, so refuse rather than truncate.
@@ -1053,6 +1062,12 @@ mod tests {
             "/ext/apps/Tools/x.fap\n",
             "/int/apps/x.fap",
             "/ext/apps/Tools/averyveryveryverylongappname.fap",
+            "/ext/apps/clock.fap",
+            "/ext/apps/Tools/x/clock.fap",
+            "/ext/apps//clock.fap",
+            "/ext/apps/./clock.fap",
+            "/ext/appsX/Tools/clock.fap",
+            "/ext/apps/Tools/.fap",
         ] {
             assert!(app_target(bad).is_err(), "{bad:?} must be rejected");
         }

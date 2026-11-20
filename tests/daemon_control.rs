@@ -217,6 +217,8 @@ async fn wrong_denied_or_unspecified_decisions_never_launch_the_app() {
     let (answer, request) = request_clock(&daemon, &mut fake).await;
     fake.decide(epoch, request.request_id + 100, APPROVE);
     assert_eq!(denied(reply(answer).await), Denial::WrongRequest);
+    // The stale prompt is withdrawn from Buddy, not left on screen.
+    assert_eq!(fake.arm_cancel().await, request.request_id);
 
     let (answer, request) = request_clock(&daemon, &mut fake).await;
     fake.decide(epoch, request.request_id, DENY);
