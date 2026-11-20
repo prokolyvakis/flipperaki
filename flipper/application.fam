@@ -3,7 +3,7 @@ App(
     name="Flipperaki",
     apptype=FlipperAppType.EXTERNAL,
     entry_point="flipperaki_app",
-    requires=["gui"],
+    requires=["gui", "notification"],
     stack_size=2 * 1024,
     fap_category="Tools",
     fap_version="0.1",

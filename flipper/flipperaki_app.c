@@ -7,17 +7,20 @@
 #include <furi_hal_resources.h>
 #include <gui/gui.h>
 #include <gui/view_dispatcher.h>
+#include <notification/notification_messages.h>
 
 #include "buddy_core.h"
 #include "buddy_protocol.h"
 #include "buddy_rpc.h"
 #include "buddy_view.h"
 
+#define TAG "Flipperaki"
 #define VIEW_ID 0
 #define TICK_PERIOD_MS 500
 
 struct FlipperakiApp {
     Gui* gui;
+    NotificationApp* notifications;
     ViewDispatcher* view_dispatcher;
     View* view;
     BuddyRpc* rpc; // NULL when not launched by the host
@@ -60,8 +63,22 @@ static void on_ingress(FuriEventLoopObject* object, void* context) {
         refresh(app);
         return;
     }
+    bool was = app->core.prompt_active;
     buddy_core_on_message(
         &app->core, now_ms(), app->ingress.bytes, app->ingress.size, &app->actions);
+    FURI_LOG_D(
+        TAG,
+        "msg %u B: prompt %d->%d req %lu sends %u",
+        app->ingress.size,
+        was,
+        app->core.prompt_active,
+        (unsigned long)app->core.last_request_id,
+        app->actions.send_count);
+    if(!was && app->core.prompt_active) {
+        // A prompt on a dark, idle screen goes unnoticed: wake it and buzz once.
+        notification_message(app->notifications, &sequence_display_backlight_on);
+        notification_message(app->notifications, &sequence_single_vibro);
+    }
     apply(app);
 }
 
@@ -70,7 +87,9 @@ static void on_tick(void* context) {
     if(app->rpc != NULL && buddy_rpc_is_closing(app->rpc)) {
         buddy_core_on_session_close(&app->core);
     }
+    bool was = app->core.prompt_active;
     buddy_core_on_tick(&app->core, now_ms());
+    if(was && !app->core.prompt_active) FURI_LOG_D(TAG, "prompt expired");
     refresh(app);
 }
 
@@ -131,6 +150,14 @@ static bool on_input(InputEvent* event, void* context) {
         hardware = down == expects_down;
     }
     BuddyOrigin origin = hardware ? BuddyOriginHardware : BuddyOriginSoftware;
+    FURI_LOG_D(
+        TAG,
+        "input key %d type %d src %d hw %d prompt %d",
+        event->key,
+        event->type,
+        event->sequence_source,
+        hardware,
+        app->core.prompt_active);
     if(buddy_rpc_is_closing(app->rpc)) buddy_core_on_session_close(&app->core);
     buddy_core_on_input(&app->core, now_ms(), origin, key, type, &app->actions);
     apply(app);
@@ -145,6 +172,7 @@ FlipperakiApp* flipperaki_app_alloc(const char* args) {
     buddy_core_init(&app->core);
 
     app->gui = furi_record_open(RECORD_GUI);
+    app->notifications = furi_record_open(RECORD_NOTIFICATION);
     app->view_dispatcher = view_dispatcher_alloc();
     app->view = buddy_view_alloc();
     view_set_context(app->view, app);
@@ -174,6 +202,7 @@ void flipperaki_app_free(FlipperakiApp* app) {
     view_dispatcher_remove_view(app->view_dispatcher, VIEW_ID);
     buddy_view_free(app->view);
     view_dispatcher_free(app->view_dispatcher);
+    furi_record_close(RECORD_NOTIFICATION);
     furi_record_close(RECORD_GUI);
     free(app);
 }
