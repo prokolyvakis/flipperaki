@@ -1,0 +1,6 @@
+# nanopb bounds. max_size for strings includes the terminating NUL.
+flipperaki.buddy.Snapshot.session_label max_size:25
+flipperaki.buddy.Snapshot.detail max_size:49
+flipperaki.buddy.ArmRequest.app_label max_size:25
+flipperaki.buddy.ArmRequest.app_path max_size:97
+flipperaki.buddy.ArmRequest.client_label max_size:25

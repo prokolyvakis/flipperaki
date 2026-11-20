@@ -1,0 +1,43 @@
+[package]
+name = "flipperaki"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.100"
+description = "A Bluetooth-first Claude desk buddy and MCP controller for Flipper Zero"
+license = "AGPL-3.0-only"
+repository = "https://github.com/prokolyvakis/flipperaki"
+publish = false
+
+[dependencies]
+anyhow = "1"
+btleplug = "0.13.5"
+bytes = "1"
+clap = { version = "4", features = ["derive"] }
+flipper-companion-protocol = "=0.8.2"
+futures = "0.3"
+prost = "0.14"
+rmcp = { version = "3.11", default-features = false, features = ["server", "transport-io", "macros"] }
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "io-std", "net", "sync", "time", "signal", "fs"] }
+tokio-serial = "5.5"
+tokio-util = { version = "0.7", features = ["codec"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = "1"
+
+[build-dependencies]
+prost-build = "0.14"
+
+[dev-dependencies]
+proptest = "1"
+tokio = { version = "1", features = ["test-util"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+dbg_macro = "warn"
+print_stdout = "warn"
