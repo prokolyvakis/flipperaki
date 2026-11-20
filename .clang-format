@@ -1,0 +1,12 @@
+# C style for flipper/ (close to the Flipper firmware style). Generated code is excluded.
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 99
+PointerAlignment: Left
+SpaceBeforeParens: Never
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AlignAfterOpenBracket: BlockIndent
+BinPackArguments: false
+BinPackParameters: false
+IndentCaseLabels: false
+SortIncludes: false
