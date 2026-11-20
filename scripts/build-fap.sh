@@ -3,8 +3,8 @@
 # and print its sha256. Never flashes, connects to a device or installs system
 # software; all uFBT state stays in ./.ufbt and ./.venv.
 #
-# SDK pin is PROVISIONAL until the user's device firmware is recorded
-# (docs/compatibility.md): Momentum release mntm-012, API 87.1.
+# SDK pin matches the user's recorded device firmware (docs/compatibility.md):
+# Momentum release mntm-012, API 87.1.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 root=$PWD

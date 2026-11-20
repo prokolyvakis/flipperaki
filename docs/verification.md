@@ -55,11 +55,44 @@ embeds paths); compare hashes from the same build.
 exactly the six tools, and `flipper_input`/`flipper_open` return `no_grant`/`disconnected`
 tool errors; prompt text from the hook appears in no log.
 
+## Hardware run over USB — 2026-11-20 14:30–15:01 EET
+
+Mac15,10, macOS 26.6.2 (25G83), arm64; Claude Code 2.1.311 (not used as a client in this run).
+Flipper Zero "Ladramd", hardware target 7, Momentum `mntm-012` (commit `e1784e74`, API 87.1,
+protobuf 0.25), connected by USB cable (`/dev/cu.usbmodemflip_Ladramd1`).
+FAP `ff66b343…e96d` copied to `/ext/apps/Tools/flipperaki.fap` with the uFBT `storage.py send`.
+Host: `target/release/flipperaki` built from `fca2803`, `enroll usb`, `daemon` with
+`FLIPPERAKI_LOG=flipperaki=debug`. The six tools were driven through `flipperaki mcp` over stdio
+by a scripted JSON-RPC client; the operator pressed the Flipper buttons.
+
+| Checklist # | Observed | Result |
+| --- | --- | --- |
+| prep | `status` connected/usb; after the fix below `firmware: "mntm-012 (Momentum)"` | passed |
+| Buddy launch | Buddy started with `RPC`, Hello↔Hello, Snapshot accepted; operator saw "Idle, 0 sessions" | passed |
+| 3 physical approval | hold OK → `Decision{approved:true}` in 7–14 s, grant shown in `status` (3 runs) | passed |
+| 3 deny | Back → `Decision{approved:false}`, `denied_by_operator`, nothing launched | passed |
+| 3 no decision | request unanswered → `expired` at 30 s, `ArmCancel` accepted, control `none` | passed |
+| 3 software approval refused | qFlipper remote/CLI `input send` while prompting | **not run** (USB port owned by the daemon) |
+| 4 handoff loop | Counter launched without `RPC`; screenshot 0 → two Up taps → screenshot 2; inputs `acknowledged` | passed |
+| 4 return_to_buddy | `not_sent` "the app is still open" (by design); after manual exit Buddy relaunched by itself | passed |
+| 6 disconnect (USB, idle) | cable pulled: session failed `Device not configured`, no hang; reconnect epoch 2, control `none`; Buddy restored after Counter exit | passed |
+| 6 disconnect during prompt / input | not run (the operator did not unplug during control) | not run |
+| 7 pause | `pause` during control → next input and open `denied: paused`; `resume` leaves control `none` | passed |
+| 7 lock | not run | not run |
+| 1, 2, 5, 8 (BLE parts), 9, 10 | not run | not run |
+
+Unexplained: of six prompts sent, one (seq 12) was accepted by Buddy (`Receipt accepted`) but the
+operator reported no prompt on screen; it expired normally. Not reproduced on the next three
+prompts; one earlier expiry was with nobody watching. Treat as open until seen again.
+
+Fixed during the run (`fca2803`): devinfo multipart replies end with an `Empty` part and use
+dotted keys, so `firmware` was always `null`.
+
 ## Not run
 
-- **Every hardware scenario** in `docs/hardware-checklist.md` (no Flipper connected; Mac Bluetooth
-  was off). BLE pairing/TCC, USB handshake on real firmware, Buddy on device, physical approval,
-  app handoff, stack/heap headroom: **not run**.
+- **BLE**: pairing/TCC, BLE transport on device, BLE disconnects, transport switching: **not run**.
+- Software-injected approval attempts, lock revocation, 10× handoff memory check, stack/heap
+  headroom: **not run**.
 - Real Claude Code hook delivery and Claude-launched MCP against a connected device: **not run**
   (hooks were not installed into the user's settings).
 - CI on GitHub: **not run** (branch not pushed). Repository protection settings: **not changed**.

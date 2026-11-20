@@ -1,9 +1,10 @@
 # Compatibility
 
-## Buddy FAP SDK pin (PROVISIONAL)
+## Buddy FAP SDK pin
 
-Provisional until the user's device firmware is recorded. The FAP only loads on
-firmware whose API major matches and whose minor is >= the SDK's.
+Matches the user's device (recorded 2026-11-20 over USB `info device`: `firmware.version
+mntm-012`, commit `e1784e74`, build date 31-12-2025, API 87.1, hardware target 7, protobuf
+0.25). The FAP only loads on firmware whose API major matches and whose minor is >= the SDK's.
 
 | Item | Value |
 |------|-------|
