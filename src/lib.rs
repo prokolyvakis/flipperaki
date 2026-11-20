@@ -6,3 +6,4 @@ pub mod hooks;
 pub mod ipc;
 pub mod limits;
 pub mod mcp;
+pub mod setup;
