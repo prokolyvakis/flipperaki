@@ -36,6 +36,7 @@ struct BuddyRpc {
     FuriMessageQueue* queue;
     FuriMutex* lock;
     bool closing;
+    bool closed_locally; // unregistered outside a callback: needs the grace period
     BuddyIngress scratch; // callback-side copy, off the 3 KiB RPC worker stack
 };
 
@@ -128,6 +129,7 @@ bool buddy_rpc_is_closing(BuddyRpc* r) {
 
 void buddy_rpc_close(BuddyRpc* r) {
     furi_check(furi_mutex_acquire(r->lock, FuriWaitForever) == FuriStatusOk);
+    if(!r->closing) r->closed_locally = true;
     unregister_locked(r, true);
     furi_mutex_release(r->lock);
 }
@@ -139,11 +141,8 @@ void buddy_rpc_close(BuddyRpc* r) {
 #define LOCAL_UNREGISTER_GRACE_MS 100
 
 void buddy_rpc_free(BuddyRpc* r) {
-    furi_check(furi_mutex_acquire(r->lock, FuriWaitForever) == FuriStatusOk);
-    bool unregistered_here = !r->closing;
-    unregister_locked(r, true);
-    furi_mutex_release(r->lock);
-    if(unregistered_here) furi_delay_ms(LOCAL_UNREGISTER_GRACE_MS);
+    buddy_rpc_close(r);
+    if(r->closed_locally) furi_delay_ms(LOCAL_UNREGISTER_GRACE_MS);
     furi_event_loop_unsubscribe(r->loop, r->queue);
     furi_message_queue_free(r->queue);
     furi_mutex_free(r->lock);

@@ -120,10 +120,15 @@ static bool on_input(InputEvent* event, void* context) {
     if(!map_input(event, &key, &type)) return true;
     // RPC GUI input is marked SOFTWARE, but the CLI's `input send` publishes events
     // without setting sequence_source (0 == HARDWARE), so the marker alone is not
-    // proof. A press or long press also requires the real button pin to be down.
+    // proof. Every event must also agree with the real button pin: down for
+    // press/long/repeat, up for release/short. An injected release can therefore
+    // never "release" a key the operator is still holding.
     bool hardware = event->sequence_source == INPUT_SEQUENCE_SOURCE_HARDWARE;
-    if(hardware && (event->type == InputTypePress || event->type == InputTypeLong)) {
-        hardware = key_physically_down(event->key);
+    if(hardware) {
+        bool down = key_physically_down(event->key);
+        bool expects_down = event->type == InputTypePress || event->type == InputTypeLong ||
+                            event->type == InputTypeRepeat;
+        hardware = down == expects_down;
     }
     BuddyOrigin origin = hardware ? BuddyOriginHardware : BuddyOriginSoftware;
     if(buddy_rpc_is_closing(app->rpc)) buddy_core_on_session_close(&app->core);

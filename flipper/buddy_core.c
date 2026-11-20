@@ -86,7 +86,13 @@ static bool app_matches_label(const char* path, const char* label) {
     if(strcmp(path + path_len - suffix_len, FAP_SUFFIX) != 0 || strstr(path, "..") != NULL) {
         return false;
     }
-    const char* name = strrchr(path, '/') + 1;
+    // Exactly one non-empty, non-dot category directory: /ext/apps/<dir>/<name>.fap
+    const char* dir = path + root_len;
+    const char* slash = strchr(dir, '/');
+    if(slash == NULL || slash == dir || strchr(slash + 1, '/') != NULL || dir[0] == '.') {
+        return false;
+    }
+    const char* name = slash + 1;
     size_t stem_len = (size_t)(path + path_len - suffix_len - name);
     return strlen(label) == stem_len && strncmp(name, label, stem_len) == 0;
 }

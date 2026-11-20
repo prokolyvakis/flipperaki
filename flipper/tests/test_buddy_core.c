@@ -294,6 +294,10 @@ static void test_prompt_label_must_name_the_launched_fap(void) {
         "/int/apps/Tools/subghz.fap", // outside /ext/apps
         "/ext/apps/Tools/subghz.elf", // not a FAP
         "subghz", // not a path
+        "/ext/apps/subghz.fap", // no category directory
+        "/ext/apps/Tools/x/subghz.fap", // nested directory
+        "/ext/apps//subghz.fap", // empty segment
+        "/ext/apps/./subghz.fap", // dot segment
     };
     for(size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
         Envelope a = arm_msg(5 + (uint32_t)i);
