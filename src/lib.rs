@@ -3,6 +3,7 @@
 pub mod broker;
 pub mod buddy;
 pub mod config;
+pub mod daemon;
 pub mod device;
 pub mod hooks;
 pub mod ipc;

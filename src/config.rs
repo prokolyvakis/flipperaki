@@ -21,9 +21,6 @@ pub struct Config {
     /// CoreBluetooth peripheral identifier chosen at enrollment (not a MAC).
     #[serde(default)]
     pub ble_peripheral_id: Option<String>,
-    /// Serial device path; discovered by USB id when absent.
-    #[serde(default)]
-    pub usb_port: Option<String>,
     #[serde(default = "default_buddy_path")]
     pub buddy_path: String,
 }
@@ -37,7 +34,6 @@ impl Default for Config {
         Self {
             transport: TransportKind::Ble,
             ble_peripheral_id: None,
-            usb_port: None,
             buddy_path: default_buddy_path(),
         }
     }
@@ -111,7 +107,6 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let config = Config {
             transport: TransportKind::Usb,
-            usb_port: Some("/dev/cu.usbmodemflip_X1".into()),
             ..Config::default()
         };
         config.save(&dir).unwrap();
