@@ -25,9 +25,12 @@ control any app. See `docs/architecture.md`.
 ## Build
 
 ```sh
-cargo build --release            # host: target/release/flipperaki
+scripts/package-macos.sh         # host: dist/Flipperaki.app (ad-hoc signed) + dist/SHA256SUMS
 scripts/build-fap.sh             # FAP: flipper/dist/flipperaki.fap
 ```
+
+Use the binary inside the bundle (`dist/Flipperaki.app/Contents/MacOS/flipperaki`, called
+`flipperaki` below) so macOS grants Bluetooth to one stable app identity.
 
 ## Set up
 
@@ -38,7 +41,8 @@ scripts/build-fap.sh             # FAP: flipper/dist/flipperaki.fap
    flipperaki enroll ble --peripheral <id>           # or: flipperaki enroll usb
    ```
    The first BLE connection triggers macOS pairing; confirm the passkey shown on the Flipper.
-3. Run the daemon (keep it running): `flipperaki daemon`
+3. Run the daemon (keep it running): `flipperaki daemon`. macOS asks for Bluetooth permission
+   the first time; allow it for Flipperaki.
 4. Claude Code activity: `flipperaki install-hooks` (backs up `~/.claude/settings.json` once and
    only adds Flipperaki entries).
 5. MCP: `claude mcp add flipperaki -- /path/to/flipperaki mcp` (or add the same command to
