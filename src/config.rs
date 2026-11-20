@@ -72,6 +72,7 @@ impl Config {
     fn validate(&self) -> anyhow::Result<()> {
         let fap = self.buddy_path.starts_with("/ext/")
             && self.buddy_path.ends_with(".fap")
+            && !self.buddy_path.contains("..")
             && self.buddy_path.len() <= 96
             && self.buddy_path.chars().all(|c| c.is_ascii_graphic());
         anyhow::ensure!(fap, "buddy_path must be an /ext/... .fap path");
@@ -92,7 +93,7 @@ mod tests {
     #[test]
     fn rejects_paths_outside_the_sd_card() {
         let bad = Config {
-            buddy_path: "/int/../x.fap".into(),
+            buddy_path: "/ext/../int/x.fap".into(),
             ..Config::default()
         };
         assert!(bad.validate().is_err());

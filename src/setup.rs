@@ -3,6 +3,8 @@
 //! Only Flipperaki's own hook entries are added or removed; every other key
 //! is preserved, and the original file is copied aside before the first edit.
 
+use std::io::Write;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
@@ -103,8 +105,18 @@ pub fn edit_settings_file(path: &Path, edit: impl FnOnce(Value) -> Value) -> any
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    // The replacement keeps the original's mode (0600 for a new file) and is
+    // created exclusively, so the rename never widens access to the settings.
+    let mode = std::fs::metadata(path).map_or(0o600, |m| m.permissions().mode() & 0o777);
     let temp = path.with_extension("json.flipperaki-tmp");
-    std::fs::write(&temp, serde_json::to_string_pretty(&updated)? + "\n")?;
+    let _ = std::fs::remove_file(&temp);
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(mode)
+        .open(&temp)?;
+    file.write_all((serde_json::to_string_pretty(&updated)? + "\n").as_bytes())?;
+    file.sync_all()?;
     std::fs::rename(&temp, path)?;
     Ok(())
 }
@@ -147,10 +159,13 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{ not json");
 
         std::fs::write(&path, r#"{"a":1}"#).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
         edit_settings_file(&path, |v| with_hooks(v, Path::new("/x/flipperaki"))).unwrap();
         let backup =
             std::fs::read_to_string(path.with_extension("json.flipperaki-backup")).unwrap();
         assert_eq!(backup, r#"{"a":1}"#);
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "rewrite must not widen permissions");
         edit_settings_file(&path, without_hooks).unwrap();
         let restored: Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
