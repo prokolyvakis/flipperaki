@@ -1,0 +1,14 @@
+App(
+    appid="flipperaki",
+    name="Flipperaki",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="flipperaki_app",
+    requires=["gui", "notification"],
+    stack_size=2 * 1024,
+    fap_category="Tools",
+    fap_version="0.1",
+    fap_description="Shows Claude activity and asks for a physical decision. Launched by the Flipperaki host.",
+    fap_author="Flipperaki",
+    # scripts/build-fap.sh stages these files with protocol/generated/buddy.pb.{c,h}.
+    sources=["*.c"],
+)

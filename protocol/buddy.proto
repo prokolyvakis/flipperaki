@@ -1,0 +1,104 @@
+// Flipperaki Buddy protocol: the inner message carried in native Flipper RPC
+// AppDataExchange payloads between the host broker and the Buddy FAP.
+//
+// Rules (see docs/protocol.md):
+// - Encoded Envelope is at most 512 bytes, checked by both sides.
+// - Zero/unspecified enum values never authorize anything.
+// - protocol_major mismatch is rejected; new fields are additive only.
+// - Removed field numbers must be reserved, never reused.
+syntax = "proto3";
+
+package flipperaki.buddy;
+
+message Envelope {
+  uint32 protocol_major = 1; // currently 1
+  uint32 epoch = 2;          // host connection epoch, nonzero
+  uint32 sequence = 3;       // sender-local message sequence, nonzero
+  oneof payload {
+    Hello hello = 10;
+    Snapshot snapshot = 11;
+    ArmRequest arm_request = 12;
+    Decision decision = 13;
+    Receipt receipt = 14;
+    ArmCancel arm_cancel = 15;
+  }
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_HOST = 1;
+  ROLE_BUDDY = 2;
+}
+
+// Sent first by each side after the Buddy app starts in RPC mode.
+message Hello {
+  Role role = 1;
+  uint32 max_message_bytes = 2;
+}
+
+enum Activity {
+  ACTIVITY_UNSPECIFIED = 0;
+  ACTIVITY_IDLE = 1;
+  ACTIVITY_WORKING = 2;
+  ACTIVITY_NEEDS_ATTENTION = 3;
+  ACTIVITY_TURN_FINISHED = 4;
+  ACTIVITY_DISCONNECTED = 5;
+}
+
+// Complete replaceable display state (host -> Buddy). Safe to coalesce.
+message Snapshot {
+  Activity activity = 1;
+  string session_label = 2;   // short local alias, display only
+  uint32 active_sessions = 3; // bounded count of known Claude sessions
+  uint32 age_seconds = 4;     // age of the newest observation
+  string detail = 5;          // optional approved short description
+}
+
+// One exact control request awaiting a physical decision (host -> Buddy).
+message ArmRequest {
+  uint32 request_id = 1;      // nonzero, unique per epoch
+  string app_label = 2;       // user-facing app name
+  string app_path = 3;        // exact loader identifier / FAP path
+  string client_label = 4;    // server-assigned client display name
+  uint32 max_actions = 5;     // action budget, nonzero
+  uint32 expires_in_seconds = 6; // nonzero
+}
+
+// Host withdraws a pending ArmRequest (expiry, pause, client gone).
+message ArmCancel {
+  uint32 request_id = 1;
+}
+
+enum Verdict {
+  VERDICT_UNSPECIFIED = 0; // never authorizes
+  VERDICT_APPROVE = 1;
+  VERDICT_DENY = 2;
+}
+
+// Physical operator decision (Buddy -> host).
+message Decision {
+  uint32 request_id = 1;
+  Verdict verdict = 2;
+}
+
+enum ReceiptStatus {
+  RECEIPT_STATUS_UNSPECIFIED = 0;
+  RECEIPT_STATUS_ACCEPTED = 1;
+  RECEIPT_STATUS_REJECTED = 2;
+}
+
+enum RejectReason {
+  REJECT_REASON_UNSPECIFIED = 0;
+  REJECT_REASON_VERSION = 1;
+  REJECT_REASON_EPOCH = 2;
+  REJECT_REASON_MALFORMED = 3;
+  REJECT_REASON_STATE = 4;
+  REJECT_REASON_BUSY = 5;
+}
+
+// Application-level acknowledgement of one message by sequence.
+message Receipt {
+  uint32 acknowledged_sequence = 1;
+  ReceiptStatus status = 2;
+  RejectReason reason = 3;
+}
