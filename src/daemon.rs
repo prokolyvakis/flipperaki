@@ -144,6 +144,9 @@ struct Connection {
     /// target. The firmware sends a frame on every redraw, so the latest one is
     /// the current screen however old it is.
     screen_since: Option<Instant>,
+    /// The operator quit Buddy on the device: leave the Flipper to them until
+    /// a request needs a prompt, `resume`, or a new connection.
+    buddy_dismissed: bool,
 }
 
 struct OpenWaiter {
@@ -260,6 +263,7 @@ impl Daemon {
             locked,
             firmware,
             screen_since: None,
+            buddy_dismissed: false,
         });
         self.board_dirty = true;
         Ok(())
@@ -319,6 +323,8 @@ impl Daemon {
         }
         if state == AppState::Closed && matches!(conn.foreground, Foreground::Buddy { .. }) {
             conn.foreground = Foreground::Unknown;
+            // Host-initiated exits are consumed by the handoff, so this one is the operator's.
+            conn.buddy_dismissed = true;
             // Buddy closing (e.g. operator pressed Back) withdraws its prompt.
             if matches!(self.control, Control::Pending(_)) {
                 self.control = Control::None;
@@ -493,7 +499,10 @@ impl Daemon {
         let Some(conn) = self.conn.as_mut() else {
             return;
         };
-        if matches!(conn.foreground, Foreground::Buddy { .. }) || conn.locked == Some(true) {
+        if matches!(conn.foreground, Foreground::Buddy { .. })
+            || conn.locked == Some(true)
+            || conn.buddy_dismissed
+        {
             return;
         }
         if conn.screen_since.take().is_some() {
@@ -585,6 +594,8 @@ impl Daemon {
                 if paused {
                     self.cancel_pending().await;
                     self.revoke("paused by operator");
+                } else if let Some(conn) = self.conn.as_mut() {
+                    conn.buddy_dismissed = false;
                 }
                 Ok(Reply::Done)
             }
@@ -706,7 +717,14 @@ impl Daemon {
                 return;
             }
         };
-        if !buddy_ready {
+        // A dismissed Buddy is reopened to ask; its Hello then re-sends the request.
+        let reopen = match self.conn.as_mut() {
+            Some(conn) if !buddy_ready && conn.buddy_dismissed => {
+                matches!(conn.device.app_lock_status().await, Ok(false))
+            }
+            _ => false,
+        };
+        if !buddy_ready && !reopen {
             let _ = reply.send(Err(Failure::Device(
                 "Buddy is not on screen; close the current app on the Flipper and retry".into(),
             )));
@@ -714,7 +732,14 @@ impl Daemon {
         }
         self.control = Control::Pending(pending);
         self.waiter = Some(OpenWaiter { client, reply });
-        self.send_arm_request(&target, id).await;
+        if reopen {
+            if let Some(conn) = self.conn.as_mut() {
+                conn.buddy_dismissed = false;
+            }
+            self.launch_buddy().await;
+        } else {
+            self.send_arm_request(&target, id).await;
+        }
     }
 
     /// Buddy -> target: exit Buddy, wait for the loader, launch the target

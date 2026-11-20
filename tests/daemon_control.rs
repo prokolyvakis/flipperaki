@@ -9,7 +9,7 @@ use flipperaki::broker::{Button, Denial, InputStep};
 use flipperaki::buddy::{Activity, ActivityReport, pb as buddy};
 use flipperaki::ipc::{Delivery, Failure, FinishMode, Reply, Request, Response};
 use flipperaki::limits::{ARM_REQUEST_TTL, GRANT_ACTION_BUDGET};
-use flipperaki::rpc::pb_gui;
+use flipperaki::rpc::{pb_app, pb_gui};
 use support::Content;
 use support::daemon::{
     ALICE, BOB, BUDDY_PATH, Behaviour, CLOCK, Fake, Harness, is_app_start, is_input,
@@ -441,4 +441,38 @@ async fn a_lost_device_ends_control_and_reconnects_disarmed() {
         Denial::NoGrant
     );
     assert_eq!(fake.count(is_input), 0);
+}
+
+/// The operator quits Buddy on the device (Hold Back): the loader is free.
+fn operator_quits_buddy(fake: &Fake) {
+    fake.set(|b| b.loader_locked = false);
+    fake.emit(Content::AppStateResponse(pb_app::AppStateResponse {
+        state: pb_app::AppState::AppClosed as i32,
+    }));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_quit_buddy_stays_closed_until_a_request_needs_it() {
+    let (daemon, mut fake, _) = ready().await;
+    operator_quits_buddy(&fake);
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    assert_eq!(fake.count(|c| is_app_start(c, BUDDY_PATH)), 1, "relaunched");
+
+    let answer = daemon.submit(ALICE, open(CLOCK)).await;
+    let epoch = fake.buddy_up().await;
+    let request = fake.arm_request().await;
+    fake.decide(epoch, request.request_id, APPROVE);
+    assert!(matches!(reply(answer).await, Ok(Reply::Opened { .. })));
+}
+
+#[tokio::test(start_paused = true)]
+async fn resume_brings_a_quit_buddy_back() {
+    let (daemon, mut fake, _) = ready().await;
+    operator_quits_buddy(&fake);
+    settle().await;
+    assert!(matches!(
+        daemon.call(ALICE, Request::Pause { paused: false }).await,
+        Ok(Reply::Done)
+    ));
+    fake.buddy_up().await;
 }
