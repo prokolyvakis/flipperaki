@@ -38,3 +38,9 @@ lines and removal condition: `third_party/btleplug/PATCHES.md`.
 
 - `tokio-util`: added `io` (`StreamReader`, `SinkWriter`, `CopyToBytes`)
   to bridge BLE channels into one `AsyncRead + AsyncWrite` stream.
+
+## Advisory exceptions (`deny.toml`)
+
+| Advisory | Crate | Why it is accepted | Remove when |
+| --- | --- | --- | --- |
+| RUSTSEC-2026-0543 | `chrono` (unmaintained, informational; no vulnerability, no fixed release) | Required unconditionally by `rmcp` 3.11 and its `schemars/chrono04` feature; Flipperaki itself never uses it. | `rmcp` drops `chrono` or moves to `jiff`/`time`. |

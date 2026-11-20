@@ -4,6 +4,12 @@ all-features = false
 
 [advisories]
 yanked = "deny"
+ignore = [
+  # Informational "unmaintained", no vulnerability and no fixed release. rmcp 3.11
+  # requires chrono (directly and via schemars/chrono04); remove this entry once
+  # rmcp drops it or moves to jiff/time.
+  { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained; required by rmcp, no alternative" },
+]
 
 [licenses]
 # Compatible with distributing the combined work under AGPL-3.0.

@@ -29,6 +29,9 @@ jobs:
         # `cog check A..B` also checks A itself, which would reject the preserved
         # GitHub "Initial commit"; verify exactly git's incoming range instead.
         run: |
+          # cog reads the git identity even to verify; the runner has none.
+          git config --global user.name ci
+          git config --global user.email ci@localhost
           status=0
           for commit in $(git rev-list "${BASE_SHA}..${HEAD_SHA}"); do
             git log -1 --format=%B "$commit" | cog verify --file - || { echo "::error::$commit"; status=1; }
