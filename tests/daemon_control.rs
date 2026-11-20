@@ -272,6 +272,41 @@ async fn a_second_client_cannot_use_or_steal_the_grant() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn input_observes_a_redraw_that_lands_before_the_last_ack() {
+    let (daemon, fake, _) = controlling().await;
+    fake.set(|b| b.redraw_on_press = true);
+    let result = daemon
+        .call(
+            ALICE,
+            Request::Input {
+                steps: vec![InputStep::Tap { button: Button::Up }],
+            },
+        )
+        .await;
+    assert!(
+        matches!(
+            result,
+            Ok(Reply::InputResult {
+                observation: Some(_),
+                ..
+            })
+        ),
+        "unexpected {result:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn observe_returns_the_last_frame_of_a_static_screen() {
+    let (daemon, _fake, _) = controlling().await;
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    let result = daemon.call(ALICE, Request::Observe).await;
+    let Ok(Reply::Observed { observation }) = result else {
+        panic!("unexpected {result:?}");
+    };
+    assert!(observation.age_ms >= 10_000);
+}
+
+#[tokio::test(start_paused = true)]
 async fn input_under_a_grant_reaches_the_device_and_spends_the_budget() {
     let (daemon, mut fake, _) = controlling().await;
     let result = daemon

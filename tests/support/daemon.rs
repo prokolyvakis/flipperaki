@@ -34,6 +34,10 @@ pub struct Behaviour {
     pub announce_app_state: bool,
     /// Buddy answers the host Hello with its own Hello.
     pub buddy_hello: bool,
+    /// Redraw right after the Press is acknowledged, not on Release, and ack
+    /// the Release slowly: the frame lands while the input is still in flight
+    /// and the screen then stays static (seen over BLE).
+    pub redraw_on_press: bool,
 }
 
 impl Default for Behaviour {
@@ -42,6 +46,7 @@ impl Default for Behaviour {
             loader_locked: false,
             announce_app_state: true,
             buddy_hello: true,
+            redraw_on_press: false,
         }
     }
 }
@@ -237,6 +242,7 @@ async fn run_fake(
         let mut after = Vec::new();
         let ok = Content::Empty(pb::Empty {});
         let mut status = 0;
+        let mut slow_ack = false;
         let reply = {
             let mut b = behaviour.lock().unwrap();
             match &content {
@@ -301,7 +307,13 @@ async fn run_fake(
                     ok
                 }
                 Content::GuiSendInputEventRequest(event) => {
-                    if streaming && event.r#type == pb_gui::InputType::Release as i32 {
+                    let press = event.r#type == pb_gui::InputType::Press as i32;
+                    let release = event.r#type == pb_gui::InputType::Release as i32;
+                    if streaming && b.redraw_on_press && press {
+                        after.push(screen());
+                    } else if b.redraw_on_press && release {
+                        slow_ack = true;
+                    } else if streaming && !b.redraw_on_press && release {
                         frame_soon();
                     }
                     ok
@@ -309,6 +321,9 @@ async fn run_fake(
                 _ => ok,
             }
         };
+        if slow_ack {
+            tokio::time::sleep(Duration::from_millis(60)).await; // BLE round trip
+        }
         if write(&mut writer, id, status, reply).await.is_err() {
             return;
         }

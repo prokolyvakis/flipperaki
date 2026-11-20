@@ -33,5 +33,3 @@ pub const ARM_REQUEST_TTL: Duration = Duration::from_secs(30);
 pub const GRANT_TTL: Duration = Duration::from_secs(300);
 /// Action budget of one approved control grant.
 pub const GRANT_ACTION_BUDGET: u32 = 40;
-/// A screen observation older than this is not "fresh".
-pub const OBSERVATION_MAX_AGE: Duration = Duration::from_secs(2);

@@ -21,7 +21,7 @@ use crate::ipc::{
     self, AppEntry, Delivery, Failure, FinishMode, Inbound, Observation, Reply, Request, Response,
     StatusReport,
 };
-use crate::limits::{BUDDY_MESSAGE_MAX_BYTES, OBSERVATION_MAX_AGE};
+use crate::limits::BUDDY_MESSAGE_MAX_BYTES;
 use crate::rpc::{AppState, DeviceEvent, RpcSession, ScreenFrame, SessionLimits};
 use crate::transport::{self, BoxedStream, Transport, ble::BlePeripheralId};
 
@@ -140,7 +140,10 @@ struct Connection {
     foreground: Foreground,
     locked: Option<bool>,
     firmware: Option<String>,
-    screen_streaming: bool,
+    /// Set while the screen stream runs: frames received since then show the
+    /// target. The firmware sends a frame on every redraw, so the latest one is
+    /// the current screen however old it is.
+    screen_since: Option<Instant>,
 }
 
 struct OpenWaiter {
@@ -256,7 +259,7 @@ impl Daemon {
             foreground: Foreground::Unknown,
             locked,
             firmware,
-            screen_streaming: false,
+            screen_since: None,
         });
         self.board_dirty = true;
         Ok(())
@@ -493,9 +496,8 @@ impl Daemon {
         if matches!(conn.foreground, Foreground::Buddy { .. }) || conn.locked == Some(true) {
             return;
         }
-        if conn.screen_streaming {
+        if conn.screen_since.take().is_some() {
             let _ = conn.device.stop_screen_stream().await;
-            conn.screen_streaming = false;
         }
         match conn.device.app_lock_status().await {
             Ok(false) => self.launch_buddy().await,
@@ -742,9 +744,9 @@ impl Daemon {
             });
         }
         conn.foreground = Foreground::Target(grant.app.clone());
-        if !conn.screen_streaming {
-            conn.screen_streaming = conn.device.start_screen_stream().await.is_ok();
-        }
+        let streaming =
+            conn.screen_since.is_some() || conn.device.start_screen_stream().await.is_ok();
+        conn.screen_since = streaming.then_some(started_at);
         let observation = fresh_observation(conn, started_at).await;
         let next_step = if observation.is_some() {
             "observe the screenshot, then flipper_input"
@@ -765,10 +767,12 @@ impl Daemon {
             .conn
             .as_mut()
             .ok_or(Failure::Denied(broker::Denial::Disconnected))?;
-        let since = now - OBSERVATION_MAX_AGE.min(Duration::from_millis(500));
+        let since = conn
+            .screen_since
+            .ok_or_else(|| Failure::Device("screen stream is not running".into()))?;
         let observation = fresh_observation(conn, since)
             .await
-            .ok_or_else(|| Failure::Device("no fresh screen frame".into()))?;
+            .ok_or_else(|| Failure::Device("no screen frame since the app started".into()))?;
         Ok(Reply::Observed { observation })
     }
 
@@ -804,6 +808,9 @@ impl Daemon {
             .conn
             .as_mut()
             .ok_or(Failure::Denied(broker::Denial::Disconnected))?;
+        // A redraw can reach us before the last step is acknowledged (seen over
+        // BLE), and a static screen sends no further frame, so count from here.
+        let sent_at = self::now();
         let mut delivered = 0u32;
         let mut last = Delivery::Acknowledged;
         for step in steps {
@@ -824,7 +831,6 @@ impl Daemon {
             }
             delivered += 1;
         }
-        let sent_at = self::now();
         tokio::time::sleep(INPUT_SETTLE).await;
         let observation = fresh_observation(conn, sent_at).await;
         let next_step = match &last {
@@ -854,9 +860,8 @@ impl Daemon {
             .conn
             .as_mut()
             .ok_or(Failure::Denied(broker::Denial::Disconnected))?;
-        if conn.screen_streaming {
+        if conn.screen_since.take().is_some() {
             let _ = conn.device.stop_screen_stream().await;
-            conn.screen_streaming = false;
         }
         match mode {
             FinishMode::LeaveRunning => Ok(Reply::Finished {
@@ -962,6 +967,7 @@ async fn pump_events(
                 received_at,
                 seq,
             } => {
+                tracing::trace!(seq, "screen frame");
                 frames.send_replace(Some(Frame {
                     screen: frame,
                     received_at: received_at.into_std(),
