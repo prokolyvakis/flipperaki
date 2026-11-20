@@ -81,16 +81,52 @@ by a scripted JSON-RPC client; the operator pressed the Flipper buttons.
 | 7 lock | not run | not run |
 | 1, 2, 5, 8 (BLE parts), 9, 10 | not run | not run |
 
-Unexplained: of six prompts sent, one (seq 12) was accepted by Buddy (`Receipt accepted`) but the
-operator reported no prompt on screen; it expired normally. Not reproduced on the next three
-prompts; one earlier expiry was with nobody watching. Treat as open until seen again.
+Of six prompts sent, one (seq 12) was accepted by Buddy but the operator saw no prompt; it
+expired normally. Explained in the BLE run below (backlight off) and fixed in `cc41769`.
 
 Fixed during the run (`fca2803`): devinfo multipart replies end with an `Empty` part and use
 dotted keys, so `firmware` was always `null`.
 
+## Hardware run over BLE — 2026-11-20 15:02–15:45 EET
+
+Same Mac, device and FAP pipeline as the USB run; USB cable unplugged for the control runs and
+plugged in only to read the device log (`log debug` over the USB CLI) while the daemon used BLE.
+`enroll ble --peripheral bcbc8db0-…3dbf`; daemon run from the terminal (`target/release`).
+Host commits `d0889bd` → `94e539b`; FAP `14c13636…acf5` (`cc41769`).
+
+| Checklist # | Observed | Result |
+| --- | --- | --- |
+| 1 enrollment | first connect: operator confirmed the passkey; `status` ble/connected, firmware read | passed |
+| 1 reconnect | daemon restarts: same peripheral each time, epoch 1, control `none` | passed |
+| Buddy over BLE | Hello/Snapshot accepted; ~60 ms per Buddy round trip | passed |
+| 3 physical approval | hold OK → approved (6 runs, incl. one from a dark screen) | passed |
+| 4 handoff loop | Counter 0 → 3 after three Up taps, screenshot matches (after `d07da8c`) | passed |
+| 5 leave running | `leave_running` acknowledged; Counter kept running; Buddy returned after manual exit | passed |
+| 6 disconnect (Mac Bluetooth off ~10 s, idle) | session ended "peripheral disconnected" at once, no hang; retries every 10 s; reconnected epoch 2, control `none`, Buddy relaunched | passed |
+| Buddy dismissal | Hold Back quits Buddy and it stays closed; next `flipper_open` reopened it with the prompt; approved (after `94e539b`) | passed |
+| 8 transport switch | `enroll ble` + daemon restart: new process, control `none` | passed (trivially) |
+| 6 during prompt/input, 7 lock, 9, 10, 2, software approval | not run | not run |
+
+Found and fixed on hardware during this run:
+
+- `d07da8c`: over BLE the redraw frame arrives before the last input ack and a static screen
+  sends no more frames, so inputs returned no observation and `flipper_observe` failed. Observe
+  now uses the latest frame since the stream started for the target (age reported).
+- `cc41769`: the "missing prompt" seen earlier (USB seq 12, BLE 13:18, 13:28) was traced with the
+  device log: the prompt was drawn every 500 ms for 30 s on a screen whose backlight had timed
+  out, and no key reached Buddy. Buddy now turns the backlight on (and vibrates, if enabled in
+  the user's settings — it did not vibrate on this device) when a prompt appears; the next
+  request from a dark screen was approved in 8 s.
+- `94e539b`: quitting Buddy on the device relaunched it at once, making the Flipper unusable
+  while the daemon ran.
+
+Bluetooth permission: the daemon was run from the Claude Code terminal session, which already
+had Bluetooth access; no new TCC prompt was recorded. The `open Flipperaki.app` path was not run.
+
 ## Not run
 
-- **BLE**: pairing/TCC, BLE transport on device, BLE disconnects, transport switching: **not run**.
+- **BLE**: disconnect during a prompt or input; Flipper-side Bluetooth toggle; TCC via the app
+  bundle: **not run**.
 - Software-injected approval attempts, lock revocation, 10× handoff memory check, stack/heap
   headroom: **not run**.
 - Real Claude Code hook delivery and Claude-launched MCP against a connected device: **not run**

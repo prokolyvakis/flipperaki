@@ -3,10 +3,11 @@
 Branch `feat/flipperaki-rc1` (local, not pushed). Started 2026-11-20 11:22 EET from
 `d7d87e3 Initial commit`.
 
-**Delivery state: `IMPLEMENTED_HARDWARE_UNVERIFIED`.** USB control works end to end on the real
-device (Momentum mntm-012): Buddy, physical approve/deny, handoff, observe, input, pause and USB
-reconnect (`docs/verification.md`). BLE, real Claude hooks/MCP launch, software-approval
-resistance on device, lock and repeated-handoff gates are still unrun.
+**Delivery state: `IMPLEMENTED_HARDWARE_UNVERIFIED`.** Control works end to end on the real
+device (Momentum mntm-012) over both USB and BLE: pairing, Buddy, physical approve/deny,
+handoff, observe, input, pause, disconnect/reconnect (`docs/verification.md`). Real Claude
+hooks/MCP launch, software-approval resistance on device, lock and repeated-handoff gates are
+still unrun.
 
 ## Backlog
 
@@ -15,15 +16,15 @@ resistance on device, lock and repeated-handoff gates are still unrun.
 | P0 Baseline | done | Toolchain pins, AGENTS.md, cog, cargo-deny, CI (`.github/workflows/ci.yml`). Device firmware recorded: mntm-012, API 87.1. |
 | P1 Shared contract | done | `protocol/buddy.proto`, nanopb options, generated C, Rust↔C fixtures both directions. |
 | P2 RPC hardening | done (offline) | Own narrow executor in `src/rpc/` reusing `flipper-companion-protocol` schema types; deadlines owned by the executor, bounded pending/multipart/events, no mid-frame abandonment, one mutation in flight. |
-| P3 Native BLE | implemented, unverified | btleplug 0.13.5 vendored with a 2-hunk patch so notification loss ends the stream; flow-control credits; enrollment by CoreBluetooth id. Pairing/TCC untested. |
-| P4 Buddy FAP | verified on device (USB) | Builds for Momentum mntm-012 / API 87.1. ASCII consumed, hardware origin + GPIO pin agreement, released-keys arming, immutable request binding, SessionClose priority path. |
-| P5 Observation and input | verified on device (USB) | Screen stream to latest-frame slot, PNG observations with epoch/sequence/age, tap/hold with stop-at-first-failure, typed delivery. |
-| P6 Authorization and handoff | verified on device (USB); lock untested | Pure grant decisions + daemon handoff (Buddy exit → closed → loader free → normal launch → fresh frame); leave-running; Buddy auto-restored when the loader is free. |
+| P3 Native BLE | verified on device | btleplug 0.13.5 vendored with a 2-hunk patch so notification loss ends the stream; flow-control credits; enrollment by CoreBluetooth id. Pairing confirmed with passkey; TCC prompt was for the terminal (daemon run from it). |
+| P4 Buddy FAP | verified on device (USB, BLE) | Builds for Momentum mntm-012 / API 87.1. ASCII consumed, hardware origin + GPIO pin agreement, released-keys arming, immutable request binding, SessionClose priority path. |
+| P5 Observation and input | verified on device (USB, BLE) | Screen stream to latest-frame slot, PNG observations with epoch/sequence/age, tap/hold with stop-at-first-failure, typed delivery. |
+| P6 Authorization and handoff | verified on device (USB, BLE); lock untested | Pure grant decisions + daemon handoff (Buddy exit → closed → loader free → normal launch → fresh frame); leave-running; Buddy restored when the loader is free unless the operator quit it (then reopened by the next request or `resume`). |
 | P7 Six MCP tools | done (offline smoke) | rmcp stdio; tools listed and denials verified against a running daemon without a device. |
 | P8 Claude Code hooks | done (offline smoke) | Allowlisted fields; reversible settings merge with backup. Not yet installed into the user's real settings. |
 | P9 USB parity | verified on device | Same session/broker; VID/PID discovery; CLI → RPC handshake. |
 | P10 Operations | partial | status/pause/resume/enroll/scan/install-hooks/uninstall-hooks; ad-hoc app bundle. No launchd agent yet (run the daemon manually). |
-| P11 Release validation | in progress | USB scenarios 3, 4, 6 (idle), 7 (pause) passed; see `docs/verification.md`. |
+| P11 Release validation | in progress | Scenarios 1, 3, 4, 5, 6 (idle), 7 (pause) passed over USB and/or BLE; see `docs/verification.md`. |
 
 ## Accepted deviations
 
@@ -56,5 +57,6 @@ resistance on device, lock and repeated-handoff gates are still unrun.
 
 ## Next action
 
-Run `docs/hardware-checklist.md` scenario 1 over BLE (`flipperaki scan` already lists the
-device as `Ladramd`), then 2 and 10 with the real Claude client, then the unrun USB items.
+Run `docs/hardware-checklist.md` scenarios 2 and 10 with the real Claude client (needs
+`flipperaki install-hooks` and `claude mcp add`, both with the user's consent), then the unrun
+items: software-injected approval, lock, disconnect during a prompt, 10x handoffs.

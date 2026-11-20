@@ -57,8 +57,11 @@ Ask Claude e.g. "open the Clock app on my Flipper and show me the screen". Claud
 Claude then observes and presses buttons, and finishes by leaving the app running or returning
 to Buddy.
 
+Buddy lights the screen when a request arrives. Hold Back on Buddy to put it away: it stays
+closed while you use the Flipper and reopens by itself only when Claude asks for control.
+
 `flipperaki pause` revokes control immediately; `flipperaki resume` allows new requests (each
-still needs approval on the device). `flipperaki status` shows the current state.
+still needs approval on the device) and brings Buddy back. `flipperaki status` shows the current state.
 
 ## Privacy
 
