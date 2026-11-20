@@ -41,9 +41,12 @@ static void draw_mascot(Canvas* canvas, int x, int y, flipperaki_buddy_Activity 
     }
 }
 
-static const char* basename_of(const char* path) {
-    const char* slash = strrchr(path, '/');
-    return slash ? slash + 1 : path;
+// The category directory of a validated "/ext/apps/<dir>/<name>.fap" path.
+static void category_of(const char* path, char* out, size_t cap) {
+    const char* dir = path + strlen("/ext/apps/");
+    const char* slash = strchr(dir, '/');
+    size_t len = slash ? (size_t)(slash - dir) : 0;
+    snprintf(out, cap, "%.*s", (int)len, dir);
 }
 
 static void draw_prompt(Canvas* canvas, const BuddyViewModel* m) {
@@ -54,7 +57,9 @@ static void draw_prompt(Canvas* canvas, const BuddyViewModel* m) {
     canvas_set_font(canvas, FontSecondary);
     snprintf(line, sizeof(line), "App: %s", r->app_label);
     canvas_draw_str(canvas, 2, 22, line);
-    snprintf(line, sizeof(line), "(%s)", basename_of(r->app_path));
+    char category[32];
+    category_of(r->app_path, category, sizeof(category));
+    snprintf(line, sizeof(line), "In: apps/%s", category);
     canvas_draw_str(canvas, 2, 31, line);
     snprintf(line, sizeof(line), "By: %s", r->client_label);
     canvas_draw_str(canvas, 2, 40, line);

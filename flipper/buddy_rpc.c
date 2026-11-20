@@ -22,8 +22,9 @@
 //   same lock. Lock order is always ours -> the session's callbacks_mutex (taken in
 //   rpc_send), on every thread, so it cannot invert.
 // - Residual risk (local exit only): a worker callback that loaded the old callback
-//   pointer just before a local unregister can still enter after buddy_rpc_free().
-//   The firmware offers no barrier for this; stock apps share it. Host-initiated
+//   pointer just before a local unregister could still enter after the unregister.
+//   The firmware offers no barrier for this; buddy_rpc_free() waits a grace period
+//   before freeing to make the window practically unreachable. Host-initiated
 //   exit (AppExit) and SessionClose unregister from inside the callback and are free
 //   of it.
 
@@ -131,8 +132,18 @@ void buddy_rpc_close(BuddyRpc* r) {
     furi_mutex_release(r->lock);
 }
 
+// shortcut: the firmware has no barrier for a callback that loaded the old
+// pointer just before a local unregister, so a local close waits this long
+// before freeing; the RPC worker would have to be starved for the whole period
+// to still enter. Replace with a synchronous unregister if the SDK gains one.
+#define LOCAL_UNREGISTER_GRACE_MS 100
+
 void buddy_rpc_free(BuddyRpc* r) {
-    buddy_rpc_close(r);
+    furi_check(furi_mutex_acquire(r->lock, FuriWaitForever) == FuriStatusOk);
+    bool unregistered_here = !r->closing;
+    unregister_locked(r, true);
+    furi_mutex_release(r->lock);
+    if(unregistered_here) furi_delay_ms(LOCAL_UNREGISTER_GRACE_MS);
     furi_event_loop_unsubscribe(r->loop, r->queue);
     furi_message_queue_free(r->queue);
     furi_mutex_free(r->lock);

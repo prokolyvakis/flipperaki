@@ -72,12 +72,32 @@ static bool snapshot_ok(const flipperaki_buddy_Snapshot* s) {
            text_ok(s->detail, sizeof(s->detail), false);
 }
 
+#define APPS_ROOT "/ext/apps/"
+#define FAP_SUFFIX ".fap"
+
+// The prompt shows app_label, so it must be exactly the file name the host will
+// launch: an installed FAP under /ext/apps/ whose stem equals the label. This
+// removes any gap between what the operator approves and what runs.
+static bool app_matches_label(const char* path, const char* label) {
+    size_t path_len = strlen(path);
+    size_t root_len = strlen(APPS_ROOT);
+    size_t suffix_len = strlen(FAP_SUFFIX);
+    if(path_len <= root_len + suffix_len || strncmp(path, APPS_ROOT, root_len) != 0) return false;
+    if(strcmp(path + path_len - suffix_len, FAP_SUFFIX) != 0 || strstr(path, "..") != NULL) {
+        return false;
+    }
+    const char* name = strrchr(path, '/') + 1;
+    size_t stem_len = (size_t)(path + path_len - suffix_len - name);
+    return strlen(label) == stem_len && strncmp(name, label, stem_len) == 0;
+}
+
 static bool arm_request_ok(const flipperaki_buddy_ArmRequest* r) {
     return r->request_id != 0 && r->max_actions != 0 && r->expires_in_seconds != 0 &&
            r->expires_in_seconds <= BUDDY_PROMPT_MAX_SECONDS &&
            text_ok(r->app_label, sizeof(r->app_label), true) &&
            text_ok(r->app_path, sizeof(r->app_path), true) &&
-           text_ok(r->client_label, sizeof(r->client_label), true);
+           text_ok(r->client_label, sizeof(r->client_label), true) &&
+           app_matches_label(r->app_path, r->app_label);
 }
 
 static void on_hello(BuddyCore* core, const Envelope* env, BuddyActions* out) {

@@ -58,8 +58,8 @@ static Envelope snapshot_msg(const char* label) {
 static Envelope arm_msg(uint32_t id) {
     Envelope e = host(flipperaki_buddy_Envelope_arm_request_tag);
     e.payload.arm_request.request_id = id;
-    strcpy(e.payload.arm_request.app_label, "Sub-GHz");
-    strcpy(e.payload.arm_request.app_path, "Sub-GHz");
+    strcpy(e.payload.arm_request.app_label, "subghz");
+    strcpy(e.payload.arm_request.app_path, "/ext/apps/Sub-GHz/subghz.fap");
     strcpy(e.payload.arm_request.client_label, "Claude Code");
     e.payload.arm_request.max_actions = 40;
     e.payload.arm_request.expires_in_seconds = 30;
@@ -285,10 +285,28 @@ static void test_arm_request_validation(void) {
     TEST_ASSERT_FALSE(core.prompt_active);
 }
 
+// The approved label must be exactly what runs: an /ext/apps FAP of that name.
+static void test_prompt_label_must_name_the_launched_fap(void) {
+    hello();
+    const char* paths[] = {
+        "/ext/apps/Sub-GHz/other.fap", // label differs from file name
+        "/ext/apps/../int/subghz.fap", // traversal
+        "/int/apps/Tools/subghz.fap", // outside /ext/apps
+        "/ext/apps/Tools/subghz.elf", // not a FAP
+        "subghz", // not a path
+    };
+    for(size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
+        Envelope a = arm_msg(5 + (uint32_t)i);
+        strcpy(a.payload.arm_request.app_path, paths[i]);
+        deliver(&a);
+        assert_rejected(flipperaki_buddy_RejectReason_REJECT_REASON_MALFORMED);
+        TEST_ASSERT_FALSE(core.prompt_active);
+    }
+}
+
 static void test_reused_request_id_rejected(void) {
     ready_with_prompt(42);
     Envelope again = arm_msg(42);
-    strcpy(again.payload.arm_request.app_label, "Other");
     deliver(&again);
     assert_rejected(flipperaki_buddy_RejectReason_REJECT_REASON_STATE);
     TEST_ASSERT_FALSE(core.prompt_active);
@@ -614,5 +632,6 @@ int main(void) {
     RUN_TEST(test_rust_fixtures_replay_through_core);
     RUN_TEST(test_c_invalid_fixtures_rejected);
     RUN_TEST(test_encode_respects_limit);
+    RUN_TEST(test_prompt_label_must_name_the_launched_fap);
     return UNITY_END();
 }

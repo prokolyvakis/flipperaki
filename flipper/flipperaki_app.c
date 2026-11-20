@@ -3,6 +3,8 @@
 #include <stdio.h>
 
 #include <furi.h>
+#include <furi_hal_gpio.h>
+#include <furi_hal_resources.h>
 #include <gui/gui.h>
 #include <gui/view_dispatcher.h>
 
@@ -93,6 +95,17 @@ static bool map_input(const InputEvent* event, BuddyKey* key, BuddyInputType* ty
     return true;
 }
 
+// Samples the button's GPIO the same way the input service does (pressed when
+// the level differs from `inverted`). Injected events cannot move a pin.
+static bool key_physically_down(InputKey key) {
+    for(size_t i = 0; i < input_pins_count; i++) {
+        if(input_pins[i].key == key) {
+            return furi_hal_gpio_read(input_pins[i].gpio) ^ input_pins[i].inverted;
+        }
+    }
+    return false;
+}
+
 // Consumes every event: in RPC mode Back must never navigate away on its own.
 static bool on_input(InputEvent* event, void* context) {
     FlipperakiApp* app = context;
@@ -105,10 +118,14 @@ static bool on_input(InputEvent* event, void* context) {
     BuddyKey key;
     BuddyInputType type;
     if(!map_input(event, &key, &type)) return true;
-    // Only the input service's GPIO path marks events HARDWARE; RPC GUI input is SOFTWARE.
-    BuddyOrigin origin = event->sequence_source == INPUT_SEQUENCE_SOURCE_HARDWARE ?
-                             BuddyOriginHardware :
-                             BuddyOriginSoftware;
+    // RPC GUI input is marked SOFTWARE, but the CLI's `input send` publishes events
+    // without setting sequence_source (0 == HARDWARE), so the marker alone is not
+    // proof. A press or long press also requires the real button pin to be down.
+    bool hardware = event->sequence_source == INPUT_SEQUENCE_SOURCE_HARDWARE;
+    if(hardware && (event->type == InputTypePress || event->type == InputTypeLong)) {
+        hardware = key_physically_down(event->key);
+    }
+    BuddyOrigin origin = hardware ? BuddyOriginHardware : BuddyOriginSoftware;
     if(buddy_rpc_is_closing(app->rpc)) buddy_core_on_session_close(&app->core);
     buddy_core_on_input(&app->core, now_ms(), origin, key, type, &app->actions);
     apply(app);
