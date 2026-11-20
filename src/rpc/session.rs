@@ -101,7 +101,8 @@ pub enum Stage {
     Written,
 }
 
-/// Every reply part's content, in arrival order.
+/// Every reply part's content, in arrival order. The firmware's terminating
+/// `Empty` part of a multipart reply is dropped.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Reply(pub Vec<pb::main::Content>);
 
@@ -475,7 +476,11 @@ impl Executor {
         if pending.bytes > self.limits.response_max_bytes {
             return Err(Failure::ResponseTooLarge(self.limits.response_max_bytes));
         }
-        pending.parts.extend(message.content);
+        pending.parts.extend(
+            message
+                .content
+                .filter(|c| !matches!(c, pb::main::Content::Empty(_))),
+        );
         if !message.has_next {
             let parts = std::mem::take(&mut pending.parts);
             self.finish(id, Delivery::Acknowledged(Reply(parts)));

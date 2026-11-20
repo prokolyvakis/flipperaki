@@ -97,7 +97,7 @@ async fn device_info_collects_multipart_properties() {
     let id = fake.recv().await.command_id;
     for (key, value, more) in [
         ("firmware.version", "mntm-010", true),
-        ("firmware.branch", "release", false),
+        ("firmware.branch", "release", true),
     ] {
         let pair = pb_property::GetResponse {
             key: key.into(),
@@ -106,6 +106,8 @@ async fn device_info_collects_multipart_properties() {
         fake.send(id, 0, more, Content::PropertyGetResponse(pair))
             .await;
     }
+    // Real firmware (Momentum mntm-012) terminates the reply with an Empty part.
+    fake.send(id, 0, false, Content::Empty(pb::Empty {})).await;
     let info = info.await.unwrap().unwrap();
     assert_eq!(info.get("firmware.version"), Some("mntm-010"));
     assert_eq!(info.0.len(), 2);

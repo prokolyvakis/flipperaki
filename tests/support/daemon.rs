@@ -242,7 +242,7 @@ async fn run_fake(
             match &content {
                 Content::PropertyGetRequest(_) => {
                     Content::PropertyGetResponse(pb_property::GetResponse {
-                        key: "firmware_version".into(),
+                        key: "firmware.version".into(),
                         value: "fake".into(),
                     })
                 }

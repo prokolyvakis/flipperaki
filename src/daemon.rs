@@ -226,12 +226,16 @@ impl Daemon {
         self.last_epoch = self.last_epoch.wrapping_add(1).max(1);
         let epoch = ConnectionEpoch(self.last_epoch);
         let device = Device::new(session.clone());
-        let firmware = device.device_info().await.ok().map(|info| {
+        let info = device.device_info().await;
+        if let Err(error) = &info {
+            tracing::warn!(%error, "firmware version unavailable");
+        }
+        let firmware = info.ok().map(|info| {
             let field = |key| info.get(key).unwrap_or("?").to_owned();
             format!(
                 "{} ({})",
-                field("firmware_version"),
-                field("firmware_origin_fork")
+                field("firmware.version"),
+                field("firmware.origin.fork")
             )
         });
         let locked = device.lock_status().await.ok();
@@ -335,6 +339,7 @@ impl Daemon {
                 return;
             }
         };
+        tracing::debug!(?message, "from Buddy");
         match message {
             FromBuddy::Hello { max_message_bytes } => {
                 if usize::try_from(max_message_bytes).unwrap_or(0) < BUDDY_MESSAGE_MAX_BYTES {
@@ -537,7 +542,8 @@ impl Daemon {
         let Some(conn) = self.conn.as_mut() else {
             return false;
         };
-        let (bytes, _sequence) = match conn.buddy.encode(payload) {
+        let kind = payload_kind(&payload);
+        let (bytes, sequence) = match conn.buddy.encode(payload) {
             Ok(encoded) => encoded,
             Err(error) => {
                 tracing::warn!(%error, "Buddy message not encodable");
@@ -545,7 +551,10 @@ impl Daemon {
             }
         };
         match conn.device.app_data_exchange(&bytes).await {
-            Ok(()) => true,
+            Ok(()) => {
+                tracing::debug!(kind, sequence, "to Buddy");
+                true
+            }
             Err(error) => {
                 tracing::info!(%error, "Buddy message not acknowledged");
                 false
@@ -1047,6 +1056,18 @@ fn screen_png(frame: &ScreenFrame) -> anyhow::Result<Vec<u8>> {
     encoder.set_depth(png::BitDepth::Eight);
     encoder.write_header()?.write_image_data(&pixels)?;
     Ok(png)
+}
+
+fn payload_kind(payload: &buddy_pb::envelope::Payload) -> &'static str {
+    use buddy_pb::envelope::Payload;
+    match payload {
+        Payload::Hello(_) => "hello",
+        Payload::Snapshot(_) => "snapshot",
+        Payload::ArmRequest(_) => "arm_request",
+        Payload::Decision(_) => "decision",
+        Payload::Receipt(_) => "receipt",
+        Payload::ArmCancel(_) => "arm_cancel",
+    }
 }
 
 #[cfg(test)]
