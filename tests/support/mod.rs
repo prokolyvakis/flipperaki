@@ -101,3 +101,5 @@ impl FakeFlipper {
         self.writer.write_all(bytes).await.expect("pipe open");
     }
 }
+
+pub mod daemon;

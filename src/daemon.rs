@@ -23,7 +23,7 @@ use crate::ipc::{
 };
 use crate::limits::{BUDDY_MESSAGE_MAX_BYTES, OBSERVATION_MAX_AGE};
 use crate::rpc::{AppState, DeviceEvent, RpcSession, ScreenFrame, SessionLimits};
-use crate::transport::{self, Transport, ble::BlePeripheralId};
+use crate::transport::{self, BoxedStream, Transport, ble::BlePeripheralId};
 
 /// How often the loop checks expiry, reconnects and restores Buddy.
 const TICK: Duration = Duration::from_millis(500);
@@ -58,9 +58,44 @@ pub async fn run(dir: &Path) -> anyhow::Result<()> {
         }
     });
     tracing::info!(transport = ?config.transport, "daemon started");
-    Daemon::new(config).run(inbound).await;
+    let open_config = config.clone();
+    let connect = move || open_configured(open_config.clone());
+    serve_with(config, connect, inbound).await;
     drop(lock);
     Ok(())
+}
+
+/// Runs the daemon loop until `inbound` closes, opening each device session
+/// with `connect`. `run` passes the configured transport; tests pass a fake.
+pub async fn serve_with<F, Fut>(config: Config, mut connect: F, inbound: mpsc::Receiver<Inbound>)
+where
+    F: FnMut() -> Fut + Send + 'static,
+    Fut: Future<Output = anyhow::Result<BoxedStream>> + Send + 'static,
+{
+    let connector: Connector = Box::new(move || Box::pin(connect()));
+    Daemon::new(config, connector).run(inbound).await;
+}
+
+/// Opens the configured transport.
+async fn open_configured(config: Config) -> anyhow::Result<BoxedStream> {
+    let transport = match config.transport {
+        TransportKind::Usb => Transport::Usb,
+        TransportKind::Ble => {
+            Transport::Ble(BlePeripheralId(config.ble_peripheral_id.ok_or_else(
+                || anyhow::anyhow!("no BLE device enrolled; run `flipperaki enroll`"),
+            )?))
+        }
+    };
+    Ok(transport::open(&transport).await?)
+}
+
+/// Opens one device byte stream per connection attempt.
+type Connector =
+    Box<dyn FnMut() -> futures::future::BoxFuture<'static, anyhow::Result<BoxedStream>> + Send>;
+
+/// The daemon's clock. Tokio's, so paused-time tests can drive expiry.
+fn now() -> Instant {
+    tokio::time::Instant::now().into_std()
 }
 
 /// Lists Flipper BLE peripherals and USB serial ports for enrollment.
@@ -115,6 +150,7 @@ struct OpenWaiter {
 
 struct Daemon {
     config: Config,
+    connector: Connector,
     board: ActivityBoard,
     board_dirty: bool,
     control: Control,
@@ -127,9 +163,10 @@ struct Daemon {
 }
 
 impl Daemon {
-    fn new(config: Config) -> Self {
+    fn new(config: Config, connector: Connector) -> Self {
         Self {
             config,
+            connector,
             board: ActivityBoard::default(),
             board_dirty: true,
             control: Control::None,
@@ -137,7 +174,7 @@ impl Daemon {
             conn: None,
             last_epoch: 0,
             last_request: 0,
-            next_connect: Instant::now(),
+            next_connect: now(),
             waiter: None,
         }
     }
@@ -167,7 +204,7 @@ impl Daemon {
     // ----- connection lifecycle -------------------------------------------
 
     async fn on_tick(&mut self) {
-        let now = Instant::now();
+        let now = now();
         self.expire(now).await;
         if self.conn.is_none() && now >= self.next_connect {
             self.next_connect = now + RECONNECT_BACKOFF;
@@ -180,15 +217,7 @@ impl Daemon {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        let transport = match self.config.transport {
-            TransportKind::Usb => Transport::Usb,
-            TransportKind::Ble => Transport::Ble(BlePeripheralId(
-                self.config.ble_peripheral_id.clone().ok_or_else(|| {
-                    anyhow::anyhow!("no BLE device enrolled; run `flipperaki enroll`")
-                })?,
-            )),
-        };
-        let stream = transport::open(&transport).await?;
+        let stream = (self.connector)().await?;
         let (session, raw_events) = RpcSession::spawn(stream, SessionLimits::default());
         let (frames_tx, frames) = watch::channel(None);
         let (events_tx, events) = mpsc::channel(32);
@@ -239,7 +268,7 @@ impl Daemon {
                 .reply
                 .send(Err(Failure::Device(format!("connection lost: {why}"))));
         }
-        self.next_connect = Instant::now() + RECONNECT_BACKOFF;
+        self.next_connect = now() + RECONNECT_BACKOFF;
     }
 
     /// Ends any pending request or grant. Queued input lives only inside a
@@ -341,7 +370,7 @@ impl Daemon {
                     RequestId(request_id),
                     approved,
                     epoch,
-                    Instant::now(),
+                    now(),
                 ) {
                     Ok(grant) => {
                         self.control = Control::Granted(grant.clone());
@@ -476,7 +505,7 @@ impl Daemon {
             return; // Updates stay coalesced on the host until Buddy returns.
         }
         self.board_dirty = false;
-        let snapshot = self.board.snapshot(Instant::now());
+        let snapshot = self.board.snapshot(now());
         self.send_to_buddy(buddy_pb::envelope::Payload::Snapshot(snapshot))
             .await;
     }
@@ -528,7 +557,7 @@ impl Daemon {
     ) {
         let response = match request {
             Request::Activity { report } => {
-                self.board.apply(report, Instant::now());
+                self.board.apply(report, now());
                 self.board_dirty = true;
                 self.push_snapshot().await;
                 Ok(Reply::Done)
@@ -556,7 +585,7 @@ impl Daemon {
     }
 
     fn status(&self, client: ClientId) -> StatusReport {
-        let now = Instant::now();
+        let now = now();
         let (control, owned) = match &self.control {
             Control::None => ("none".to_owned(), false),
             Control::Pending(p) => (
@@ -651,7 +680,7 @@ impl Daemon {
             self.paused,
             target.clone(),
             id,
-            Instant::now(),
+            now(),
         );
         let pending = match admitted {
             Ok(pending) => pending,
@@ -687,7 +716,7 @@ impl Daemon {
         if !wait_for_loader_free(&conn.device).await {
             return Err(Failure::Device("loader still busy after Buddy exit".into()));
         }
-        let started_at = Instant::now();
+        let started_at = now();
         let launch = conn.device.app_start(&grant.app.path, "").await;
         let delivery = to_delivery(&launch);
         if launch.is_err() {
@@ -715,7 +744,7 @@ impl Daemon {
     }
 
     async fn observe(&mut self, client: ClientId) -> Response {
-        let now = Instant::now();
+        let now = now();
         broker::check_owner(&self.control, client, self.epoch(), now).map_err(Failure::Denied)?;
         let conn = self
             .conn
@@ -729,7 +758,7 @@ impl Daemon {
     }
 
     async fn input(&mut self, client: ClientId, steps: &[InputStep]) -> Response {
-        let now = Instant::now();
+        let now = now();
         let grant =
             broker::authorize_input(&self.control, client, self.epoch(), self.paused, now, steps)
                 .map_err(Failure::Denied)?;
@@ -780,7 +809,7 @@ impl Daemon {
             }
             delivered += 1;
         }
-        let sent_at = Instant::now();
+        let sent_at = self::now();
         tokio::time::sleep(INPUT_SETTLE).await;
         let observation = fresh_observation(conn, sent_at).await;
         let next_step = match &last {
@@ -803,7 +832,7 @@ impl Daemon {
     }
 
     async fn finish(&mut self, client: ClientId, mode: FinishMode) -> Response {
-        let now = Instant::now();
+        let now = now();
         broker::check_owner(&self.control, client, self.epoch(), now).map_err(Failure::Denied)?;
         self.revoke("finished by client");
         let conn = self
@@ -951,8 +980,8 @@ async fn wait_for_app_state(conn: &mut Connection, wanted: AppState) -> bool {
 }
 
 async fn wait_for_loader_free(device: &Device) -> bool {
-    let until = Instant::now() + APP_TRANSITION_TIMEOUT;
-    while Instant::now() < until {
+    let until = now() + APP_TRANSITION_TIMEOUT;
+    while now() < until {
         if let Ok(false) = device.app_lock_status().await {
             return true;
         }
@@ -976,7 +1005,12 @@ async fn fresh_observation(conn: &mut Connection, since: Instant) -> Option<Obse
         png_base64: base64::engine::general_purpose::STANDARD.encode(png),
         epoch: conn.epoch.0,
         sequence: frame.seq,
-        age_ms: u64::try_from(frame.received_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+        age_ms: u64::try_from(
+            now()
+                .saturating_duration_since(frame.received_at)
+                .as_millis(),
+        )
+        .unwrap_or(u64::MAX),
     })
 }
 
