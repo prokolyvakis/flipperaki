@@ -72,7 +72,7 @@ impl FlipperTools {
     }
 
     #[tool(
-        description = "List installed FAPs and the small verified builtin catalog. Use an entry's id with flipper_open."
+        description = "List installed FAPs under /ext/apps/<category>/. Use an entry's id with flipper_open; `tested: false` means no hardware run has covered that app."
     )]
     async fn flipper_apps(&self) -> Result<CallToolResult, McpError> {
         self.forward(Request::Apps).await
@@ -89,7 +89,7 @@ impl FlipperTools {
     }
 
     #[tool(
-        description = "Return a fresh screenshot of the Flipper screen (128x64) with freshness metadata. Screenshots are sent to the Claude service."
+        description = "Return the current Flipper screen (128x64) as a screenshot. The device sends a frame on every redraw, so age_ms is how long the screen has been unchanged. Screenshots are sent to the Claude service."
     )]
     async fn flipper_observe(&self) -> Result<CallToolResult, McpError> {
         self.forward(Request::Observe).await
