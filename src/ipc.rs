@@ -24,14 +24,27 @@ use crate::limits::IPC_LINE_MAX_BYTES;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    Activity { report: ActivityReport },
+    Activity {
+        report: ActivityReport,
+    },
     Status,
     Apps,
-    Open { app: String },
+    Open {
+        app: String,
+    },
     Observe,
-    Input { steps: Vec<InputStep> },
-    Finish { mode: FinishMode },
-    Pause { paused: bool },
+    Input {
+        steps: Vec<InputStep>,
+    },
+    Finish {
+        mode: FinishMode,
+    },
+    /// Pausing revokes any grant and discards queued input. Resuming restores
+    /// no grant: new control still needs a fresh physical approval on Buddy,
+    /// so any same-user client (including an agent's shell) may resume.
+    Pause {
+        paused: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
