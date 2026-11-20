@@ -3,4 +3,6 @@
 pub mod broker;
 pub mod buddy;
 pub mod hooks;
+pub mod ipc;
 pub mod limits;
+pub mod mcp;
