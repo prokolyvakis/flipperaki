@@ -275,6 +275,12 @@ impl Daemon {
         let Some(conn) = self.conn.as_mut() else {
             return;
         };
+        if state == AppState::Closed && matches!(conn.foreground, Foreground::Target(_)) {
+            // The approved app is gone; input would reach whatever is now on screen.
+            conn.foreground = Foreground::Unknown;
+            self.revoke("target app closed");
+            return;
+        }
         if state == AppState::Closed && matches!(conn.foreground, Foreground::Buddy { .. }) {
             conn.foreground = Foreground::Unknown;
             // Buddy closing (e.g. operator pressed Back) withdraws its prompt.
@@ -340,6 +346,17 @@ impl Daemon {
                     Ok(grant) => {
                         self.control = Control::Granted(grant.clone());
                         let response = self.hand_off(&grant).await;
+                        let handed_off = matches!(
+                            &response,
+                            Ok(Reply::Opened {
+                                delivery: Delivery::Acknowledged,
+                                ..
+                            })
+                        );
+                        if !handed_off {
+                            // Never leave a grant behind a failed or uncertain handoff.
+                            self.revoke("handoff did not complete");
+                        }
                         self.reply_waiter(grant.client, response);
                     }
                     Err(denial) => {
@@ -728,6 +745,21 @@ impl Daemon {
                 "the approved app is not in the foreground".into(),
             ));
         }
+        // Ordinary apps send no close notice, so confirm an app still holds the
+        // loader before every input. This cannot prove *which* app it is.
+        let app_running =
+            conn.locked != Some(true) && matches!(conn.device.app_lock_status().await, Ok(true));
+        if !app_running {
+            conn.foreground = Foreground::Unknown;
+            self.revoke("device locked or approved app exited");
+            return Err(Failure::Device(
+                "the device is locked or the approved app has exited; control revoked".into(),
+            ));
+        }
+        let conn = self
+            .conn
+            .as_mut()
+            .ok_or(Failure::Denied(broker::Denial::Disconnected))?;
         let mut delivered = 0u32;
         let mut last = Delivery::Acknowledged;
         for step in steps {
@@ -906,7 +938,12 @@ async fn wait_for_app_state(conn: &mut Connection, wanted: AppState) -> bool {
     loop {
         match tokio::time::timeout_at(until, conn.events.recv()).await {
             Ok(Some(DeviceEvent::AppState(state))) if state == wanted => return true,
-            Ok(Some(DeviceEvent::Lock { locked })) => conn.locked = Some(locked),
+            Ok(Some(DeviceEvent::Lock { locked })) => {
+                conn.locked = Some(locked);
+                if locked {
+                    return false; // The caller fails the transition, which revokes.
+                }
+            }
             Ok(Some(DeviceEvent::Failed(_))) | Ok(None) | Err(_) => return false,
             Ok(Some(_)) => {}
         }
