@@ -31,3 +31,4 @@ rustc-ice-*.txt
 /flipper/tests/build/
 /.remember/
 /.claude/worktrees/
+/dist/
