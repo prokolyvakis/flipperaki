@@ -55,6 +55,9 @@ still unrun.
 - Claude Desktop chat activity is not visible (MCP only); Desktop Hardware Buddy (NUS) mode is
   not implemented.
 
+- The host does not yet send a `Receipt` for Buddy's `Decision`, so after a deny Buddy shows
+  "Denied #n, unconfirmed" until the next prompt.
+
 ## Next action
 
 Run `docs/hardware-checklist.md` scenarios 2 and 10 with the real Claude client (needs
