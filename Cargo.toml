@@ -23,7 +23,7 @@ serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "io-std", "net", "sync", "time", "signal", "fs"] }
 tokio-serial = "5.5"
-tokio-util = { version = "0.7", features = ["codec"] }
+tokio-util = { version = "0.7", features = ["codec", "io"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = "1"
@@ -34,6 +34,10 @@ prost-build = "0.14"
 [dev-dependencies]
 proptest = "1"
 tokio = { version = "1", features = ["test-util"] }
+
+# Makes lost BLE notifications observable; see third_party/btleplug/PATCHES.md.
+[patch.crates-io]
+btleplug = { path = "third_party/btleplug" }
 
 [lints.rust]
 unsafe_code = "forbid"
