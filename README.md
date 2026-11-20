@@ -41,8 +41,10 @@ Use the binary inside the bundle (`dist/Flipperaki.app/Contents/MacOS/flipperaki
    flipperaki enroll ble --peripheral <id>           # or: flipperaki enroll usb
    ```
    The first BLE connection triggers macOS pairing; confirm the passkey shown on the Flipper.
-3. Run the daemon (keep it running): `flipperaki daemon`. macOS asks for Bluetooth permission
-   the first time; allow it for Flipperaki.
+3. Run the daemon (keep it running): `open dist/Flipperaki.app --args daemon`. Launching through
+   `open` makes Flipperaki (not your terminal) the app macOS asks for Bluetooth permission; allow
+   it. For logs, run `flipperaki daemon` in a terminal instead (the terminal then needs Bluetooth
+   permission). Stop it with `pkill -f "flipperaki daemon"`.
 4. Claude Code activity: `flipperaki install-hooks` (backs up `~/.claude/settings.json` once and
    only adds Flipperaki entries).
 5. MCP: `claude mcp add flipperaki -- /path/to/flipperaki mcp` (or add the same command to
