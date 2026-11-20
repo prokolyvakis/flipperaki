@@ -26,9 +26,15 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_TITLE: ${{ github.event.pull_request.title }}
+        # `cog check A..B` also checks A itself, which would reject the preserved
+        # GitHub "Initial commit"; verify exactly git's incoming range instead.
         run: |
-          cog check "${BASE_SHA}..${HEAD_SHA}"
-          printf '%s\n' "$PR_TITLE" | cog verify --file -
+          status=0
+          for commit in $(git rev-list "${BASE_SHA}..${HEAD_SHA}"); do
+            git log -1 --format=%B "$commit" | cog verify --file - || { echo "::error::$commit"; status=1; }
+          done
+          printf '%s\n' "$PR_TITLE" | cog verify --file - || status=1
+          exit "$status"
 
   host:
     runs-on: macos-15 # ARM64
